@@ -3,6 +3,7 @@ package ws
 import (
 	"bytes"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -46,6 +47,10 @@ type Conn struct {
 // Read will block indefinitely by default if ws.Server is implemented
 func (c *Conn) Read(p []byte) (int, error) {
 	msg := <-c.inbox
+	if msg == nil {
+		// channel was closed
+		return 0, io.EOF
+	}
 	r := bytes.NewReader(msg.content)
 	return r.Read(p)
 }

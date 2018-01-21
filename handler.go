@@ -67,7 +67,7 @@ func startReading(ctr Connector) {
 		}
 		isBinary := mtype == websocket.BinaryMessage
 		if !isServer {
-			c.inbox <- &message{m, isBinary}
+			c.inbox <- &message{m, isBinary, nil}
 		} else {
 			err = onMessage(s, m, isBinary)
 			if err != nil {
@@ -111,16 +111,30 @@ func startWriting(ctr Connector) {
 				messageType = websocket.TextMessage
 			}
 			c.Conn.SetWriteDeadline(time.Now().Add(c.WriteTimeout))
-			err := c.Conn.WriteMessage(messageType, out.content)
+			w, err := c.Conn.NextWriter(messageType)
 			if err != nil {
+				out.resp <- &writeResponse{0, err}
 				wasClean = false
 				reason = err
 				// don't know if this is the right code
 				code = websocket.CloseGoingAway
 				return
 			}
+			written, err := w.Write(out.content)
+			if err != nil {
+				out.resp <- &writeResponse{written, err}
+				wasClean = false
+				reason = err
+				// don't know if this is the right code
+				code = websocket.CloseGoingAway
+				return
+			}
+			select {
+			case out.resp <- &writeResponse{written, w.Close()}:
+			case <-time.After(c.WriteTimeout):
+			}
 		case <-ticker.C:
-			err := c.Conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(c.WriteTimeout))
+			err := c.Conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(c.WriteTimeout))
 			if err != nil {
 				wasClean = false
 				reason = err

@@ -19,6 +19,11 @@ const (
 	ModeText = websocket.TextMessage
 )
 
+var (
+	// ErrWriteTimeout means that outbox was blocking for longer than Conn.WriteTimeout
+	ErrWriteTimeOut = errors.New("write timed out")
+)
+
 // Conn exposes per-socket connection configs, and implements io.ReadWriteCloser
 // TODO - implement net.Conn?
 type Conn struct {
@@ -73,15 +78,26 @@ func (c *Conn) ReadMessage(p []byte) (bytesRead int, isBinary bool, err error) {
 // If writing both types is required, Conn.Conn().WriteMessage is available
 // Implements io.ReadWriteCloser
 func (c *Conn) Write(m []byte) (int, error) {
-	out := &message{m, c.messageMode == websocket.BinaryMessage}
-	c.outbox <- out
+	respChan := make(chan *writeResponse, 1)
+	out := &message{m, c.messageMode == websocket.BinaryMessage, respChan}
+	select {
+	case c.outbox <- out:
+	case <-time.After(c.WriteTimeout):
+		return 0, ErrWriteTimeOut
+	}
 
-	// this is not an accurate portrayal of what happens...
-	return len(m), nil
+	select {
+	case resp := <-respChan:
+		return resp.n, resp.err
+	case <-time.After(c.WriteTimeout):
+		return 0, ErrWriteTimeOut
+	}
 }
 
 // Close causes the connection to close.  How about that?
 func (c *Conn) Close() error {
+	// TODO - it would be nice to cancel pending writes and close the write channel here
+	// We are not set up for this right now, so just timeout and eventually pending writes will clear up
 	timeout := time.NewTimer(30 * time.Second)
 	select {
 	case c.closeSignal <- true:
@@ -107,4 +123,11 @@ func (c *Conn) SetMessageMode(m int) {
 type message struct {
 	content  []byte
 	isBinary bool
+
+	resp chan *writeResponse
+}
+
+type writeResponse struct {
+	n   int
+	err error
 }

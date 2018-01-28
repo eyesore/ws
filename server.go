@@ -25,5 +25,5 @@ type Server interface {
 	OnMessage(payload []byte, isBinary bool) error
 }
 
-// Factory creates a server
+// Factory creates a Connector
 type Factory func() (Connector, error)

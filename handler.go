@@ -177,7 +177,7 @@ type Handler struct {
 	ReadBufferSize int
 }
 
-// NewHandler returns a usable and configurable Handler
+// NewHandler returns a ready-to-use-or-configure Handler
 func NewHandler(f Factory) *Handler {
 	h := &Handler{
 		Upgrader: &websocket.Upgrader{
